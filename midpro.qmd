@@ -1,0 +1,165 @@
+---
+title: Midterm Project - Noise Complaints
+author: Qianruo Tan
+format: html
+---
+
+
+**1. Data cleaning.**
+
+```{python}
+import pandas as pd
+import numpy as np
+import pyarrow as pa
+import pyarrow.parquet as pq
+import pyarrow.feather as feather
+import time
+from timeit import default_timer as timer
+import pyarrow.feather as feather
+```
+
+***1.1 Import the data, rename the columns with our preferred styles.***
+```{python}
+## Import data
+data = pd.read_csv("nypd311w063024noise_by100724.csv")
+```
+
+```{python}
+data.columns = [col.strip().replace(" ", "_").lower() for col in data.columns]
+```
+
+
+***1.2 Summarize the missing information. Are there variables that are close to completely missing?***
+
+```{python}
+## Convert date columns to datetime
+data['created_date'] = pd.to_datetime(data['created_date'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+data['closed_date'] = pd.to_datetime(data['closed_date'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+data['resolution_action_updated_date'] = pd.to_datetime(data['resolution_action_updated_date'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+```
+
+```{python}
+## Check date errors
+date_errors = {
+    'closed_earlier_than_created': data[data['closed_date'] < data['created_date']],
+    'closed_and_created_match_to_second': data[data['closed_date'] == data['created_date']],
+    'dates_exactly_at_midnight_or_noon': data[data['closed_date'].dt.strftime('%H:%M:%S').isin(['00:00:00', '12:00:00'])],
+    'action_update_after_closed': data[data['resolution_action_updated_date'] > data['closed_date']]
+}
+
+## Display
+for key, df in date_errors.items():
+    print(f"{key}: {len(df)} records")
+    display(df.head())
+```
+
+Based on the output, the structure of the dataset with a list of column names, follows by the result of the check for records where closed_date is earlier than created_date.
+
+***1.3.1 Are their redundant information in the data? ***
+```{python}
+## Check
+## Check for duplicate rows and columns
+duplicate_rows = data.duplicated().sum()
+print(f"Number of duplicate rows: {duplicate_rows}")
+constant_columns = [col for col in data.columns if data[col].nunique() == 1]
+print(f"Columns with constant values: {constant_columns}")
+```
+
+***1.3.2 Try storing the data using the Arrow format and comment on the efficiency gain.***
+```{python}
+## Load the CSV file again
+
+## Save the DataFrame as a Feather file
+feather.write_feather(data, 'nypd311w063024noise_by100724.feather')
+
+## Measure and compare save times for CSV and arrow formats
+start_csv = timer()
+csv_data = pd.read_csv('nypd311w063024noise_by100724.csv')
+end_csv = timer()
+
+start_feather = timer()
+feather_data = pd.read_feather('nypd311w063024noise_by100724.feather')
+end_feather = timer()
+
+print("CSV load time:", end_csv - start_csv)
+print("Feather load time:", end_feather - start_feather)
+```
+
+The Parquet format shows a significantly faster save time compared to the CSV format. This difference illustrates the efficiency of the Arrow format for saving data, particularly in terms of speed.
+
+***1.4 Are there invalid NYC zipcode or borough? Justify and clean them if yes.***
+
+```{python}
+print("Columns in the dataset:", data.columns)
+
+# Define valid boroughs and ZIP codes
+valid_boroughs = ["Bronx", "Brooklyn", "Manhattan", "Queens", "Staten Island"]
+valid_zip_codes = [z for z in (
+    list(range(10001, 10293)) + list(range(10301, 10315)) +
+    list(range(10451, 10500)) + list(range(11201, 11257)) +
+    list(range(11351, 11698))
+)]
+
+# Replace invalid ZIP codes with NaN
+data.loc[~data['incident_zip'].isin(valid_zip_codes), 'incident_zip'] = np.nan
+
+# Display the unique values in 'incident_zip' to verify replacements
+print("Unique values in 'Incident_Zip' after replacement:", data['incident_zip'].unique())
+```
+
+***1.5 Are there date errors? Examples are earlier closed_date than created_date; closed_date and created_date matching to the second; dates exactly at midnight or noon to the second; action_update_date after closed_date.***
+
+```{python}
+## Already convert the date in 1.2
+data
+```
+The dataset is free from date errors based on 1.2 criteria, which confirms its temporal integrity and suitability for further analysis without requiring date-related corrections.
+
+
+***1.6 Summarize your suggestions to the data curator in several bullet points.***
+
+- Ensure a consistent date format across all records to avoid ambiguous or incorrect parsing.
+- Add checks for default timestamps (e.g., midnight or noon) to catch potential missing or erroneous data.
+- Maintain detailed documentation about each field, especially temporal fields, to clarify expected values and enforce data validation rules.
+
+
+
+
+**2. Data exploration.**
+
+
+***2.1 If we suspect that response time may depend on the time of day when a complaint is made, we can compare the response times for complaints submitted during nighttime and daytime. To do this, we can visualize the comparison by complaint type, borough, and weekday (vs weekend/holiday).***
+
+
+***2.2 Perform a formal hypothesis test to confirm the observations from your visualization. Formaly state your hypotheses and summary your conclusions in plain English.***
+
+Null Hypothesis (H0): There is no difference in mean response times between complaints submitted during nighttime and daytime.
+Alternative Hypothesis (H1): There is a significant difference in mean response times between complaints submitted during nighttime and daytime.
+
+
+
+***2.3 Create a binary variable over2h to indicate that a service request took two hours or longer to close.***
+
+
+
+***2.4 Does over2h depend on the complain type, borough, or weekday (vs weekend/holiday)? State your hypotheses and summarize your conclusions in plain English.***
+
+
+
+
+**3. Data analysis.**
+
+
+***3.1 The addresses of NYC police percincts are stored in data/nypd_precincts.csv. Use geocoding tools to find their geocode (longitude and lattitude) from the addresses.***
+
+
+***3.2 Create a variable dist2pp which represent the distance from each request incidence to the nearest police precinct.***
+
+
+***3.3 Create zip code level variables by merging with data from package uszipcode***.
+
+
+***3.4 Randomly select 20% of the complaints as testing data with seeds 1234. Build a logistic model to predict over2h for the noise complains with the training data, using all the variables you can engineer from the available data. If you have tuning parameters, justify how they were selected.***
+
+
+***3.5 Assess the performance of your model in terms of commonly used metrics. Summarize your results to a New Yorker who is not data science savvy.***
